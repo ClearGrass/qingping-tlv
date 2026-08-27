@@ -207,6 +207,23 @@ def decode_sensor_data_v2(byte_array: bytes) -> dict[str, Any]:
             sensor_data["noise"] = bytes_to_int_little_endian(byte_array[17:19])
             sensor_data["light"] = bytes_to_int_little_endian(byte_array[19:23])
 
+    elif sensor_type == 0x13:  # Indoor Environment Monitor (fw >= 1.3, 31-byte record)
+        # Offsets per official TLVDecoder.java; bytes [15:17] are skipped there.
+        if len(byte_array) >= 27:
+            sensor_data["temperature"] = (
+                bytes_to_int_little_endian(byte_array[5:7]) / 10.0
+            )
+            sensor_data["humidity"] = bytes_to_int_little_endian(byte_array[7:9]) / 10.0
+            sensor_data["co2"] = bytes_to_int_little_endian(byte_array[9:11])
+            # [11:13] not in the official demo; monotone with pm25/pm10 in the
+            # official test vector (5/7/8), so almost certainly pm1.
+            sensor_data["pm1"] = bytes_to_int_little_endian(byte_array[11:13])
+            sensor_data["pm25"] = bytes_to_int_little_endian(byte_array[13:15])
+            sensor_data["pm10"] = bytes_to_int_little_endian(byte_array[17:19])
+            sensor_data["tvoc"] = bytes_to_int_little_endian(byte_array[19:21])
+            sensor_data["noise"] = bytes_to_int_little_endian(byte_array[21:23])
+            sensor_data["light"] = bytes_to_int_little_endian(byte_array[23:27])
+
     return sensor_data
 
 
@@ -230,7 +247,11 @@ def _decode_simple_field(key: str, payload: bytes) -> tuple[str, Any] | None:
     if key in {"64", "09"} and len(payload) >= 1:
         return ("battery", payload[0])
     if key == "65" and len(payload) >= 1:
-        return ("signalStrength", bytes_to_int_little_endian(payload))
+        # RSSI is a signed dBm value (0xc9 -> -55).
+        signal = payload[0]
+        if signal >= 128:
+            signal -= 256
+        return ("signalStrength", signal)
     if key == "2c" and len(payload) >= 1:
         return ("usbPluggedIn", payload[0] == 1)
     return None
